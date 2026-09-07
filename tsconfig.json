@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "esModuleInterop": true,
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+    "useDefineForClassFields": false,
+    "strict": false,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "ac-web": ["./src/core/ac-adapters/ac-web"],
+      "ac-sql": ["./src/core/ac-adapters/ac-sql"],
+      "ac-data-dictionary": ["./src/core/ac-adapters/ac-data-dictionary"],
+      "ac-runtime": ["./src/core/ac-adapters/ac-runtime"],
+      "@autocode-ts/*": ["F:/Packages/AutoCode/Github/autocode-typescript/dist/packages/*"]
+    }
+  },
+  "include": ["src/**/*", "scripts/**/*", "tests/**/*"]
+}

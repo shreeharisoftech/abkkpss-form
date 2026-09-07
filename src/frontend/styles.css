@@ -1,0 +1,257 @@
+/* ABKKPSS Form Digitization - Mobile-First Stylesheet */
+
+:root {
+  --abkkpss-primary: #1e3d59;
+  --abkkpss-secondary: #17b978;
+  --abkkpss-accent: #ff6e40;
+  --abkkpss-bg: #f5f7fa;
+  --abkkpss-card-bg: #ffffff;
+}
+
+body {
+  background-color: var(--abkkpss-bg);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  color: #2b2d42;
+  margin: 0;
+  padding: 0;
+  -webkit-tap-highlight-color: transparent;
+  padding-bottom: 80px; /* Space for mobile sticky footer */
+}
+
+/* Mobile-First Touch Targets */
+button, input, select, .form-control, .form-select, .btn {
+  min-height: 44px;
+  font-size: 15px;
+}
+
+.touch-btn {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  border-radius: 8px;
+}
+
+/* App Header */
+.abkkpss-navbar {
+  background-color: var(--abkkpss-primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.abkkpss-brand {
+  font-size: 1.1rem;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: #ffffff !important;
+}
+
+.abkkpss-brand small {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 400;
+  color: #ffdd59;
+}
+
+/* Mobile Member Cards */
+.member-card {
+  border-left: 4px solid var(--abkkpss-primary);
+  border-radius: 10px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+  margin-bottom: 12px;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.member-card.is-adult {
+  border-left-color: var(--abkkpss-secondary);
+}
+
+.member-card-header {
+  background-color: #f8fafc;
+  cursor: pointer;
+  padding: 10px 14px;
+  font-weight: 600;
+}
+
+/* Sticky Mobile Fee Calculator */
+.sticky-fee-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
+  border-top: 2px solid var(--abkkpss-secondary);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
+  z-index: 1030;
+  padding: 10px 16px;
+}
+
+.fee-badge-pill {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+  font-weight: 700;
+  border-radius: 20px;
+  padding: 6px 14px;
+  display: inline-block;
+}
+
+.fee-total-amount {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: var(--abkkpss-primary);
+}
+
+/* Desktop Expansion */
+@media (min-width: 768px) {
+  body {
+    padding-bottom: 30px;
+  }
+  .sticky-fee-bar {
+    position: static;
+    margin-top: 24px;
+    border-radius: 12px;
+    border: 1px solid #d0d7de;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+  }
+}
+
+/* QR Code Display */
+.qr-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: white;
+  border-radius: 12px;
+  border: 1px dashed #cbd5e1;
+}
+
+.qr-image {
+  max-width: 280px;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* Submission card styling */
+.submission-card {
+  border-radius: 10px;
+  margin-bottom: 12px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.04);
+  transition: all 0.2s ease;
+}
+
+.submission-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+/* Global Activity Overlay Loader */
+.global-activity-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background-color: rgba(15, 23, 42, 0.65);
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+  z-index: 105000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+.global-activity-overlay.active {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.activity-loader-card {
+  background: #ffffff;
+  border-radius: 20px;
+  padding: 32px 40px;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.25), 0 4px 12px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  min-width: 300px;
+  max-width: 90vw;
+  animation: activityCardPop 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes activityCardPop {
+  from {
+    transform: scale(0.88);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.activity-spinner-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.activity-spinner {
+  width: 3.8rem;
+  height: 3.8rem;
+  border-width: 0.35em;
+  color: var(--abkkpss-primary) !important;
+}
+
+.activity-spinner-inner-icon {
+  position: absolute;
+  font-size: 1.4rem;
+  color: var(--abkkpss-secondary);
+  animation: pulseIcon 1.5s infinite ease-in-out;
+}
+
+@keyframes pulseIcon {
+  0%, 100% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+.activity-loader-title {
+  color: var(--abkkpss-primary);
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+}
+
+.activity-loader-message {
+  color: #64748b;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  max-width: 320px;
+}
+
+.activity-progress-bar {
+  height: 5px;
+  border-radius: 4px;
+  background-color: #e2e8f0;
+  overflow: hidden;
+  margin-top: 14px;
+  width: 100%;
+}
+
