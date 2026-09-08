@@ -68,7 +68,7 @@ export const STANDARD_ZONES: ZoneOption[] = [
   { code: '04', name: 'South Gujarat', label: '04 - South Gujarat' },
   { code: '05', name: 'North Gujarat', label: '05 - North Gujarat' },
   { code: '06', name: 'Saurashtra', label: '06 - Saurashtra' },
-  { code: '07', name: 'Morbi', label: '07 - Morbi' },
+  { code: '07', name: 'Indore', label: '07 - Indore' },
   { code: '08', name: 'South India', label: '08 - South India' },
   { code: '09', name: 'Maharastra', label: '09 - Maharastra' },
   { code: '10', name: 'East Kutch', label: '10 - East Kutch' },
@@ -140,7 +140,23 @@ export class AbkkpssAppElement extends HTMLElement {
     isMock: false,
   };
   whatsappQrUrl: string | null = null;
-  waPollTimer: any = null;
+  isCheckingWhatsApp: boolean = false;
+  waLastCheckedText: string = '';
+
+  // Password Modal state
+  showPasswordModal: boolean = false;
+  passwordModalUser: { id: number; username: string } | null = null;
+  passwordModalError: string | null = null;
+  passwordModalSuccess: string | null = null;
+  isSavingPassword: boolean = false;
+  isSelfPasswordUpdate: boolean = false;
+
+  // Edit User Modal state
+  showEditUserModal: boolean = false;
+  editModalUser: { id: number; username: string; role: string; zone_id: string | null } | null = null;
+  editModalError: string | null = null;
+  editModalSuccess: string | null = null;
+  isSavingEditUser: boolean = false;
 
   // Migration state
   migrationPreview: any = null;
@@ -232,7 +248,6 @@ export class AbkkpssAppElement extends HTMLElement {
   }
 
   disconnectedCallback() {
-    if (this.waPollTimer) clearInterval(this.waPollTimer);
     const overlay = document.getElementById('abkkpss-global-overlay');
     if (overlay) overlay.remove();
   }
@@ -356,7 +371,6 @@ export class AbkkpssAppElement extends HTMLElement {
     this.currentUser = null;
     localStorage.removeItem('abkkpss_token');
     localStorage.removeItem('abkkpss_user');
-    if (this.waPollTimer) clearInterval(this.waPollTimer);
     this.render();
   }
 
@@ -930,40 +944,301 @@ export class AbkkpssAppElement extends HTMLElement {
     }, 'Deleting user account...', 'Delete User');
   }
 
+  // --- USER PASSWORD UPDATE (SELF & ADMIN) ---
+  openPasswordModal(userId: number, username: string, isSelf: boolean = false) {
+    this.passwordModalUser = { id: userId, username };
+    this.isSelfPasswordUpdate = isSelf;
+    this.passwordModalError = null;
+    this.passwordModalSuccess = null;
+    this.isSavingPassword = false;
+    this.showPasswordModal = true;
+    this.render();
+  }
+
+  closePasswordModal() {
+    this.showPasswordModal = false;
+    this.passwordModalUser = null;
+    this.isSelfPasswordUpdate = false;
+    this.passwordModalError = null;
+    this.passwordModalSuccess = null;
+    this.isSavingPassword = false;
+    this.render();
+  }
+
+  async updateSelfPassword(currentPass: string, newPass: string) {
+    this.isSavingPassword = true;
+    this.passwordModalError = null;
+    this.passwordModalSuccess = null;
+    this.render();
+
+    try {
+      const res = await fetch('/api/auth/update-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.token}`,
+        },
+        body: JSON.stringify({ currentPassword: currentPass, newPassword: newPass }),
+      });
+      const data = await res.json();
+      const payload = data.data || data;
+
+      if (payload.success) {
+        this.passwordModalSuccess = payload.message || 'Password updated successfully!';
+        this.isSavingPassword = false;
+        this.render();
+        setTimeout(() => {
+          this.closePasswordModal();
+        }, 1200);
+      } else {
+        this.passwordModalError = payload.error || payload.message || 'Failed to update password';
+        this.isSavingPassword = false;
+        this.render();
+      }
+    } catch (err: any) {
+      this.passwordModalError = 'Network error: ' + err.message;
+      this.isSavingPassword = false;
+      this.render();
+    }
+  }
+
+  async updateUserPassword(userId: number, newPass: string) {
+    this.isSavingPassword = true;
+    this.passwordModalError = null;
+    this.passwordModalSuccess = null;
+    this.render();
+
+    try {
+      const res = await fetch(`/api/users/${userId}/password`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.token}`,
+        },
+        body: JSON.stringify({ password: newPass }),
+      });
+      const data = await res.json();
+      const payload = data.data || data;
+
+      if (payload.success) {
+        this.passwordModalSuccess = payload.message || 'Password updated successfully!';
+        this.isSavingPassword = false;
+        this.render();
+        setTimeout(() => {
+          this.closePasswordModal();
+          if (this.currentUser?.role === 'SUPER_ADMIN') {
+            this.loadUsers();
+          }
+        }, 1200);
+      } else {
+        this.passwordModalError = payload.error || payload.message || 'Failed to update password';
+        this.isSavingPassword = false;
+        this.render();
+      }
+    } catch (err: any) {
+      this.passwordModalError = 'Network error: ' + err.message;
+      this.isSavingPassword = false;
+      this.render();
+    }
+  }
+
+  // --- EDIT USER DETAILS (ADMIN / SUPER ADMIN) ---
+  openEditUserModal(user: { id: number; username: string; role: string; zone_id: string | null }) {
+    this.editModalUser = { ...user };
+    this.editModalError = null;
+    this.editModalSuccess = null;
+    this.isSavingEditUser = false;
+    this.showEditUserModal = true;
+    this.render();
+  }
+
+  closeEditUserModal() {
+    this.showEditUserModal = false;
+    this.editModalUser = null;
+    this.editModalError = null;
+    this.editModalSuccess = null;
+    this.isSavingEditUser = false;
+    this.render();
+  }
+
+  async updateUserDetails(id: number, username: string, role: string, zone_id: string | null) {
+    this.isSavingEditUser = true;
+    this.editModalError = null;
+    this.editModalSuccess = null;
+    this.render();
+
+    try {
+      const res = await fetch(`/api/users/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${this.token}`,
+        },
+        body: JSON.stringify({
+          username,
+          role,
+          zone_id: zone_id || null,
+        }),
+      });
+      const data = await res.json();
+      const payload = data.data || data;
+
+      if (payload.success) {
+        this.editModalSuccess = payload.message || 'User updated successfully!';
+        this.isSavingEditUser = false;
+        if (this.currentUser && this.currentUser.id === id) {
+          this.currentUser.username = username;
+          this.currentUser.role = role as any;
+          this.currentUser.zone_id = zone_id || null;
+          localStorage.setItem('abkkpss_user', JSON.stringify(this.currentUser));
+        }
+        this.render();
+        setTimeout(() => {
+          this.closeEditUserModal();
+          this.loadUsers();
+        }, 1200);
+      } else {
+        this.editModalError = payload.error || payload.message || 'Failed to update user';
+        this.isSavingEditUser = false;
+        this.render();
+      }
+    } catch (err: any) {
+      this.editModalError = 'Network error: ' + err.message;
+      this.isSavingEditUser = false;
+      this.render();
+    }
+  }
+
+  // --- WHATSAPP (MANUAL REFRESH & NON-DESTRUCTIVE DOM UPDATES) ---
+  renderWhatsAppQrContent(): string {
+    const wa = this.whatsappStatus;
+    if (wa.status === 'CONNECTED') {
+      return `<div class="text-success py-5"><i class="bi bi-check-circle-fill fs-1 d-block mb-2"></i> WhatsApp is Connected & Active! Ready to dispatch receipts.</div>`;
+    }
+    if (wa.status === 'INITIALIZING') {
+      return `
+        <div class="text-primary py-5">
+          <div class="spinner-border text-primary mb-3" role="status"></div>
+          <div class="fw-semibold">Initializing WhatsApp Web client...</div>
+          <small class="text-muted d-block mt-1">Starting Chromium browser session. Click 'Refresh Status / QR' in a moment.</small>
+        </div>
+      `;
+    }
+    if (this.whatsappQrUrl) {
+      return `
+        <img id="wa-qr-img" src="${this.whatsappQrUrl}" alt="WhatsApp QR Code" class="qr-image mb-2" />
+        <small class="text-muted d-block">Scan this QR code with WhatsApp on your phone (Linked Devices)</small>
+      `;
+    }
+    return `
+      <div class="text-muted py-5">
+        <i class="bi bi-qr-code fs-1 d-block mb-2"></i>
+        <div>Click <strong>'Initialize & Pair'</strong> to start WhatsApp client.</div>
+        <small class="d-block mt-1">Once initialized, click <strong>'Refresh Status / QR'</strong> to fetch the QR code.</small>
+      </div>
+    `;
+  }
+
+  updateWhatsAppUI() {
+    if (this.activeTab !== 'superadmin') return;
+
+    // 1. Status badge
+    const badge = this.querySelector('#wa-status-badge');
+    if (badge) {
+      const wa = this.whatsappStatus;
+      badge.className = `badge ${
+        wa.status === 'CONNECTED'
+          ? 'bg-success'
+          : wa.status === 'PAIRING'
+          ? 'bg-warning text-dark'
+          : wa.status === 'INITIALIZING'
+          ? 'bg-info text-dark'
+          : 'bg-danger'
+      } px-3 py-2`;
+      badge.textContent = wa.status;
+    }
+
+    // 2. QR Container - targeted update without replacing existing image if unchanged
+    const qrContainer = this.querySelector('#wa-qr-container');
+    if (qrContainer) {
+      const existingImg = qrContainer.querySelector('#wa-qr-img') as HTMLImageElement;
+      if (
+        existingImg &&
+        this.whatsappQrUrl &&
+        existingImg.getAttribute('src') === this.whatsappQrUrl &&
+        this.whatsappStatus.status === 'PAIRING'
+      ) {
+        // Same QR code is already displayed - keep the DOM node intact so camera does not lose focus
+      } else {
+        qrContainer.innerHTML = this.renderWhatsAppQrContent();
+      }
+    }
+
+    // 3. Last checked timestamp
+    const lastCheckedEl = this.querySelector('#wa-last-checked');
+    if (lastCheckedEl) {
+      lastCheckedEl.textContent = this.waLastCheckedText ? `Last checked: ${this.waLastCheckedText}` : '';
+    }
+
+    // 4. Control buttons & spinner icon
+    const btnConnect = this.querySelector('#btn-wa-connect') as HTMLButtonElement;
+    const btnSimulate = this.querySelector('#btn-wa-simulate') as HTMLButtonElement;
+    const btnDisconnect = this.querySelector('#btn-wa-disconnect') as HTMLButtonElement;
+    const btnRefresh = this.querySelector('#btn-wa-refresh') as HTMLButtonElement;
+    const refreshIcon = this.querySelector('#wa-refresh-icon');
+
+    if (btnConnect) btnConnect.disabled = this.whatsappStatus.status === 'CONNECTED' || this.whatsappStatus.status === 'INITIALIZING';
+    if (btnSimulate) btnSimulate.disabled = this.whatsappStatus.status === 'CONNECTED';
+    if (btnDisconnect) btnDisconnect.disabled = this.whatsappStatus.status === 'DISCONNECTED';
+    if (btnRefresh) btnRefresh.disabled = this.isCheckingWhatsApp;
+
+    if (refreshIcon) {
+      if (this.isCheckingWhatsApp) {
+        refreshIcon.classList.add('spin');
+      } else {
+        refreshIcon.classList.remove('spin');
+      }
+    }
+  }
+
   async loadWhatsAppStatus(isManual = false) {
-    const doLoad = async () => {
-      try {
-        const res = await fetch('/api/whatsapp/status', {
+    if (isManual) {
+      this.isCheckingWhatsApp = true;
+      this.updateWhatsAppUI();
+    }
+
+    try {
+      const res = await fetch('/api/whatsapp/status', {
+        headers: { Authorization: `Bearer ${this.token}` },
+      });
+      const rawData = await res.json();
+      const data = rawData.data || rawData;
+      if (data.success) {
+        this.whatsappStatus = {
+          status: data.status,
+          hasQr: data.hasQr,
+          isMock: data.isMock,
+        };
+      }
+
+      if (this.whatsappStatus.status === 'PAIRING' || this.whatsappStatus.hasQr) {
+        const qrRes = await fetch('/api/whatsapp/qr', {
           headers: { Authorization: `Bearer ${this.token}` },
         });
-        const data = await res.json();
-        if (data.success) {
-          this.whatsappStatus = {
-            status: data.status,
-            hasQr: data.hasQr,
-            isMock: data.isMock,
-          };
+        const rawQrData = await qrRes.json();
+        const qrData = rawQrData.data || rawQrData;
+        if (qrData.success && qrData.qr) {
+          this.whatsappQrUrl = qrData.qr;
         }
-
-        if (this.whatsappStatus.status === 'PAIRING' || this.whatsappStatus.hasQr) {
-          const qrRes = await fetch('/api/whatsapp/qr', {
-            headers: { Authorization: `Bearer ${this.token}` },
-          });
-          const qrData = await qrRes.json();
-          if (qrData.success) {
-            this.whatsappQrUrl = qrData.qr;
-          }
-        } else {
-          this.whatsappQrUrl = null;
-        }
-        this.renderSuperAdmin();
-      } catch {}
-    };
-
-    if (isManual) {
-      return this.withLoading(doLoad, 'Refreshing WhatsApp status...');
-    } else {
-      return doLoad();
+      } else if (this.whatsappStatus.status !== 'INITIALIZING') {
+        this.whatsappQrUrl = null;
+      }
+      this.waLastCheckedText = new Date().toLocaleTimeString();
+    } catch (err) {
+      console.warn('Failed to load WhatsApp status:', err);
+    } finally {
+      this.isCheckingWhatsApp = false;
+      this.updateWhatsAppUI();
     }
   }
 
@@ -973,7 +1248,7 @@ export class AbkkpssAppElement extends HTMLElement {
         method: 'POST',
         headers: { Authorization: `Bearer ${this.token}` },
       });
-      this.loadWhatsAppStatus();
+      await this.loadWhatsAppStatus(false);
     }, 'Connecting to WhatsApp Web...', 'WhatsApp Integration');
   }
 
@@ -983,7 +1258,7 @@ export class AbkkpssAppElement extends HTMLElement {
         method: 'POST',
         headers: { Authorization: `Bearer ${this.token}` },
       });
-      this.loadWhatsAppStatus();
+      await this.loadWhatsAppStatus(false);
     }, 'Simulating WhatsApp Web connection...', 'WhatsApp Integration');
   }
 
@@ -993,7 +1268,7 @@ export class AbkkpssAppElement extends HTMLElement {
         method: 'POST',
         headers: { Authorization: `Bearer ${this.token}` },
       });
-      this.loadWhatsAppStatus();
+      await this.loadWhatsAppStatus(false);
     }, 'Disconnecting WhatsApp Web...', 'WhatsApp Integration');
   }
 
@@ -1017,6 +1292,9 @@ export class AbkkpssAppElement extends HTMLElement {
             <span class="badge ${this.getRoleBadgeClass()} py-1 px-2">
               ${this.currentUser.username} (${this.currentUser.role}${this.currentUser.zone_id ? ` - ${this.getZoneLabel(this.currentUser.zone_id)}` : ''})
             </span>
+            <button class="btn btn-sm btn-outline-warning text-nowrap" id="btn-change-own-password" title="Change your login password">
+              <i class="bi bi-key-fill me-1"></i>Change Password
+            </button>
             <button class="btn btn-sm btn-outline-light" id="btn-logout">Logout</button>
           </div>
         </div>
@@ -1057,6 +1335,12 @@ export class AbkkpssAppElement extends HTMLElement {
 
       <!-- Approval Modal Container -->
       ${this.renderModalContent()}
+
+      <!-- Password Update Modal Container -->
+      ${this.renderPasswordModalContent()}
+
+      <!-- Edit User Modal Container -->
+      ${this.renderEditUserModalContent()}
     `;
 
     this.attachGlobalListeners();
@@ -1804,8 +2088,8 @@ export class AbkkpssAppElement extends HTMLElement {
           <div class="card border-0 shadow-sm h-100">
             <div class="card-header bg-white py-3 border-bottom d-flex justify-content-between align-items-center">
               <h5 class="mb-0 fw-bold"><i class="bi bi-whatsapp text-success me-2"></i> WhatsApp Web Connectivity (wwebjs)</h5>
-              <span class="badge ${
-                wa.status === 'CONNECTED' ? 'bg-success' : wa.status === 'PAIRING' ? 'bg-warning text-dark' : 'bg-danger'
+              <span id="wa-status-badge" class="badge ${
+                wa.status === 'CONNECTED' ? 'bg-success' : wa.status === 'PAIRING' ? 'bg-warning text-dark' : wa.status === 'INITIALIZING' ? 'bg-info text-dark' : 'bg-danger'
               } px-3 py-2">
                 ${wa.status}
               </span>
@@ -1816,31 +2100,27 @@ export class AbkkpssAppElement extends HTMLElement {
               </p>
 
               <!-- QR Code Streaming Screen -->
-              <div class="qr-container mb-3 mx-auto" style="max-width: 320px;">
-                ${
-                  wa.status === 'CONNECTED'
-                    ? `<div class="text-success py-5"><i class="bi bi-check-circle-fill fs-1 d-block mb-2"></i> WhatsApp is Connected & Active! Ready to dispatch receipts.</div>`
-                    : this.whatsappQrUrl
-                    ? `<img src="${this.whatsappQrUrl}" alt="WhatsApp QR Code" class="qr-image mb-2" />
-                       <small class="text-muted d-block">Scan this QR code with WhatsApp on your phone</small>`
-                    : `<div class="text-muted py-5"><i class="bi bi-qr-code fs-1 d-block mb-2"></i> Click 'Initialize & Pair' to generate a live QR code.</div>`
-                }
+              <div id="wa-qr-container" class="qr-container mb-3 mx-auto" style="max-width: 320px; min-height: 200px;">
+                ${this.renderWhatsAppQrContent()}
               </div>
 
               <!-- Controls -->
-              <div class="d-flex flex-wrap gap-2 justify-content-center">
-                <button type="button" class="btn btn-success btn-sm" id="btn-wa-connect">
+              <div class="d-flex flex-wrap gap-2 justify-content-center align-items-center mb-2">
+                <button type="button" class="btn btn-success btn-sm" id="btn-wa-connect" ${wa.status === 'CONNECTED' || wa.status === 'INITIALIZING' ? 'disabled' : ''}>
                   <i class="bi bi-play-fill me-1"></i> Initialize & Pair (Live)
                 </button>
-                <button type="button" class="btn btn-outline-success btn-sm" id="btn-wa-simulate">
+                <button type="button" class="btn btn-outline-success btn-sm" id="btn-wa-simulate" ${wa.status === 'CONNECTED' ? 'disabled' : ''}>
                   <i class="bi bi-laptop me-1"></i> Simulate Connect (Headless)
                 </button>
-                <button type="button" class="btn btn-outline-danger btn-sm" id="btn-wa-disconnect">
+                <button type="button" class="btn btn-outline-danger btn-sm" id="btn-wa-disconnect" ${wa.status === 'DISCONNECTED' ? 'disabled' : ''}>
                   <i class="bi bi-power me-1"></i> Disconnect
                 </button>
-                <button type="button" class="btn btn-outline-secondary btn-sm" id="btn-wa-refresh">
-                  <i class="bi bi-arrow-repeat me-1"></i> Refresh QR
+                <button type="button" class="btn btn-primary btn-sm" id="btn-wa-refresh" ${this.isCheckingWhatsApp ? 'disabled' : ''} title="Check WhatsApp status and fetch latest QR code">
+                  <i class="bi bi-arrow-repeat me-1 ${this.isCheckingWhatsApp ? 'spin' : ''}" id="wa-refresh-icon"></i> Refresh Status / QR
                 </button>
+              </div>
+              <div class="mb-3">
+                <small id="wa-last-checked" class="text-muted">${this.waLastCheckedText ? `Last checked: ${this.waLastCheckedText}` : ''}</small>
               </div>
 
               <!-- Test Dispatch -->
@@ -1919,10 +2199,21 @@ export class AbkkpssAppElement extends HTMLElement {
                           u.role === 'SUPER_ADMIN' ? 'bg-danger' : u.role === 'ADMIN' ? 'bg-warning text-dark' : 'bg-info text-dark'
                         }">${u.role}</span></td>
                         <td>${u.zone_id ? `<span class="badge bg-light text-dark border">${this.getZoneLabel(u.zone_id)}</span>` : '<span class="text-muted">All Zones</span>'}</td>
-                        <td class="text-end">
+                        <td class="text-end text-nowrap">
+                          <button class="btn btn-outline-secondary btn-sm p-0 px-2 me-1 btn-edit-user"
+                            data-id="${u.id}"
+                            data-username="${u.username}"
+                            data-role="${u.role}"
+                            data-zone="${u.zone_id || ''}"
+                            title="Edit User">
+                            <i class="bi bi-pencil-square me-1"></i>Edit
+                          </button>
+                          <button class="btn btn-outline-primary btn-sm p-0 px-2 me-1 btn-edit-user-password" data-id="${u.id}" data-username="${u.username}" title="Update Password">
+                            <i class="bi bi-key-fill me-1"></i>Password
+                          </button>
                           ${
                             u.username !== 'admin'
-                              ? `<button class="btn btn-outline-danger btn-sm p-0 px-2 btn-delete-user" data-id="${u.id}">×</button>`
+                              ? `<button class="btn btn-outline-danger btn-sm p-0 px-2 btn-delete-user" data-id="${u.id}" title="Delete User">×</button>`
                               : ''
                           }
                         </td>
@@ -2127,6 +2418,143 @@ export class AbkkpssAppElement extends HTMLElement {
     }
   }
 
+  renderPasswordModalContent(): string {
+    if (!this.showPasswordModal || !this.passwordModalUser) return '';
+    const user = this.passwordModalUser;
+    const isSelf = this.isSelfPasswordUpdate;
+
+    return `
+      <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5); overflow-y: auto; z-index: 1060;">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header abkkpss-navbar text-white py-3">
+              <h5 class="modal-title fw-bold">
+                <i class="bi bi-key-fill text-warning me-2"></i>${isSelf ? 'Change Password' : 'Reset User Password'}
+              </h5>
+              <button type="button" class="btn-close btn-close-white" id="btn-close-pass-modal"></button>
+            </div>
+            <div class="modal-body p-4">
+              <p class="text-muted small mb-3">
+                ${
+                  isSelf
+                    ? `Change login password for your account (<strong class="text-dark">${user.username}</strong>).`
+                    : `Update login password for user <strong class="text-dark">${user.username}</strong>.`
+                }
+              </p>
+
+              ${
+                this.passwordModalError
+                  ? `<div class="alert alert-danger py-2 px-3 small">${this.passwordModalError}</div>`
+                  : ''
+              }
+              ${
+                this.passwordModalSuccess
+                  ? `<div class="alert alert-success py-2 px-3 small">${this.passwordModalSuccess}</div>`
+                  : ''
+              }
+
+              <form id="form-update-password">
+                ${
+                  isSelf
+                    ? `
+                <div class="mb-3">
+                  <label class="form-label small fw-semibold">Current Password *</label>
+                  <input type="password" class="form-control" id="modal-current-pass" placeholder="Enter current password" required />
+                </div>`
+                    : ''
+                }
+                <div class="mb-3">
+                  <label class="form-label small fw-semibold">New Password *</label>
+                  <input type="password" class="form-control" id="modal-new-pass" minlength="4" placeholder="At least 4 characters" required />
+                </div>
+                <div class="mb-3">
+                  <label class="form-label small fw-semibold">Confirm Password *</label>
+                  <input type="password" class="form-control" id="modal-confirm-pass" minlength="4" placeholder="Re-enter new password" required />
+                </div>
+                <div class="form-check mb-3">
+                  <input class="form-check-input" type="checkbox" id="modal-show-pass" />
+                  <label class="form-check-label small text-muted" for="modal-show-pass">Show Passwords</label>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2 pt-2 border-top">
+                  <button type="button" class="btn btn-secondary touch-btn" id="btn-cancel-pass-modal" ${this.isSavingPassword ? 'disabled' : ''}>Cancel</button>
+                  <button type="submit" class="btn btn-primary touch-btn" id="btn-submit-pass" ${this.isSavingPassword ? 'disabled' : ''}>
+                    ${this.isSavingPassword ? '<span class="spinner-border spinner-border-sm me-1"></span>Saving...' : '<i class="bi bi-check2 me-1"></i>Update Password'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
+  renderEditUserModalContent(): string {
+    if (!this.showEditUserModal || !this.editModalUser) return '';
+    const user = this.editModalUser;
+
+    return `
+      <div class="modal fade show d-block" tabindex="-1" style="background: rgba(0,0,0,0.5); overflow-y: auto; z-index: 1060;">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header abkkpss-navbar text-white py-3">
+              <h5 class="modal-title fw-bold">
+                <i class="bi bi-person-gear text-warning me-2"></i>Edit User Account
+              </h5>
+              <button type="button" class="btn-close btn-close-white" id="btn-close-edit-user-modal"></button>
+            </div>
+            <div class="modal-body p-4">
+              <p class="text-muted small mb-3">
+                Update account details for user <strong class="text-dark">#${user.id} (${user.username})</strong>.
+              </p>
+
+              ${
+                this.editModalError
+                  ? `<div class="alert alert-danger py-2 px-3 small">${this.editModalError}</div>`
+                  : ''
+              }
+              ${
+                this.editModalSuccess
+                  ? `<div class="alert alert-success py-2 px-3 small">${this.editModalSuccess}</div>`
+                  : ''
+              }
+
+              <form id="form-edit-user">
+                <div class="mb-3">
+                  <label class="form-label small fw-semibold">Username *</label>
+                  <input type="text" class="form-control" id="modal-edit-username" value="${user.username}" minlength="3" required />
+                </div>
+                <div class="mb-3">
+                  <label class="form-label small fw-semibold">Role *</label>
+                  <select class="form-select form-select-sm" id="modal-edit-role" required>
+                    <option value="REGULAR_USER" ${user.role === 'REGULAR_USER' ? 'selected' : ''}>REGULAR_USER (Form Entry & View)</option>
+                    <option value="ADMIN" ${user.role === 'ADMIN' ? 'selected' : ''}>ADMIN (Approval & PDF)</option>
+                    <option value="SUPER_ADMIN" ${user.role === 'SUPER_ADMIN' ? 'selected' : ''}>SUPER_ADMIN (Full Access)</option>
+                  </select>
+                </div>
+                <div class="mb-3">
+                  <label class="form-label small fw-semibold">Zone (for Regular User)</label>
+                  <select class="form-select form-select-sm" id="modal-edit-zone">
+                    <option value="" ${!user.zone_id ? 'selected' : ''}>None / All Zones (for Admin)</option>
+                    ${STANDARD_ZONES.map((z) => `<option value="${z.code}" ${user.zone_id === z.code ? 'selected' : ''}>${z.label}</option>`).join('')}
+                  </select>
+                </div>
+
+                <div class="d-flex justify-content-end gap-2 pt-2 border-top">
+                  <button type="button" class="btn btn-secondary touch-btn" id="btn-cancel-edit-user-modal" ${this.isSavingEditUser ? 'disabled' : ''}>Cancel</button>
+                  <button type="submit" class="btn btn-primary touch-btn" id="btn-submit-edit-user" ${this.isSavingEditUser ? 'disabled' : ''}>
+                    ${this.isSavingEditUser ? '<span class="spinner-border spinner-border-sm me-1"></span>Saving...' : '<i class="bi bi-check2 me-1"></i>Save Changes'}
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
+  }
+
   renderModalContent(): string {
     if (!this.showApprovalModal || !this.selectedSubmission) return '';
     const { form, members } = this.selectedSubmission;
@@ -2318,6 +2746,12 @@ export class AbkkpssAppElement extends HTMLElement {
   attachGlobalListeners() {
     this.querySelector('#btn-logout')?.addEventListener('click', () => this.logout());
 
+    this.querySelector('#btn-change-own-password')?.addEventListener('click', () => {
+      if (this.currentUser) {
+        this.openPasswordModal(this.currentUser.id, this.currentUser.username, true);
+      }
+    });
+
     this.querySelector('#tab-form')?.addEventListener('click', () => {
       this.activeTab = 'form';
       this.render();
@@ -2333,10 +2767,7 @@ export class AbkkpssAppElement extends HTMLElement {
       this.activeTab = 'superadmin';
       this.render();
       this.loadUsers();
-      this.loadWhatsAppStatus();
-      if (!this.waPollTimer) {
-        this.waPollTimer = setInterval(() => this.loadWhatsAppStatus(), 4000);
-      }
+      this.loadWhatsAppStatus(false);
     });
 
     if (this.activeTab === 'form') {
@@ -2631,6 +3062,73 @@ export class AbkkpssAppElement extends HTMLElement {
       const id = parseInt(e.target.getAttribute('data-id') || e.target.closest('button').getAttribute('data-id'), 10);
       this.rejectSubmission(id);
     });
+
+    // Password Update Modal Listeners
+    this.querySelector('#btn-close-pass-modal')?.addEventListener('click', () => this.closePasswordModal());
+    this.querySelector('#btn-cancel-pass-modal')?.addEventListener('click', () => this.closePasswordModal());
+
+    const showPassCheckbox = this.querySelector('#modal-show-pass') as HTMLInputElement;
+    showPassCheckbox?.addEventListener('change', () => {
+      const currentPassInput = this.querySelector('#modal-current-pass') as HTMLInputElement;
+      const newPassInput = this.querySelector('#modal-new-pass') as HTMLInputElement;
+      const confirmPassInput = this.querySelector('#modal-confirm-pass') as HTMLInputElement;
+      const type = showPassCheckbox.checked ? 'text' : 'password';
+      if (currentPassInput) currentPassInput.type = type;
+      if (newPassInput) newPassInput.type = type;
+      if (confirmPassInput) confirmPassInput.type = type;
+    });
+
+    const passForm = this.querySelector('#form-update-password');
+    passForm?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const currentPass = (this.querySelector('#modal-current-pass') as HTMLInputElement)?.value;
+      const newPass = (this.querySelector('#modal-new-pass') as HTMLInputElement)?.value;
+      const confirmPass = (this.querySelector('#modal-confirm-pass') as HTMLInputElement)?.value;
+
+      if (this.isSelfPasswordUpdate && !currentPass) {
+        this.passwordModalError = 'Current password is required';
+        this.render();
+        return;
+      }
+
+      if (!newPass || newPass.trim().length < 4) {
+        this.passwordModalError = 'Password must be at least 4 characters long';
+        this.render();
+        return;
+      }
+      if (newPass !== confirmPass) {
+        this.passwordModalError = 'Passwords do not match';
+        this.render();
+        return;
+      }
+
+      if (this.isSelfPasswordUpdate) {
+        this.updateSelfPassword(currentPass, newPass.trim());
+      } else if (this.passwordModalUser) {
+        this.updateUserPassword(this.passwordModalUser.id, newPass.trim());
+      }
+    });
+
+    // Edit User Modal Listeners
+    this.querySelector('#btn-close-edit-user-modal')?.addEventListener('click', () => this.closeEditUserModal());
+    this.querySelector('#btn-cancel-edit-user-modal')?.addEventListener('click', () => this.closeEditUserModal());
+
+    const editUserForm = this.querySelector('#form-edit-user');
+    editUserForm?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!this.editModalUser) return;
+      const u = (this.querySelector('#modal-edit-username') as HTMLInputElement)?.value?.trim();
+      const r = (this.querySelector('#modal-edit-role') as HTMLSelectElement)?.value;
+      const z = (this.querySelector('#modal-edit-zone') as HTMLSelectElement)?.value;
+
+      if (!u || u.length < 3) {
+        this.editModalError = 'Username must be at least 3 characters long';
+        this.render();
+        return;
+      }
+
+      this.updateUserDetails(this.editModalUser.id, u, r, z || null);
+    });
   }
 
   attachSuperAdminListeners() {
@@ -2647,6 +3145,24 @@ export class AbkkpssAppElement extends HTMLElement {
       const r = (this.querySelector('#new-role') as HTMLSelectElement).value;
       const z = (this.querySelector('#new-zone-id') as HTMLInputElement).value;
       this.createUser(u, p, r, z);
+    });
+
+    this.querySelectorAll('.btn-edit-user').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = parseInt(btn.getAttribute('data-id')!, 10);
+        const username = btn.getAttribute('data-username') || '';
+        const role = btn.getAttribute('data-role') || 'REGULAR_USER';
+        const zone_id = btn.getAttribute('data-zone') || null;
+        this.openEditUserModal({ id, username, role, zone_id });
+      });
+    });
+
+    this.querySelectorAll('.btn-edit-user-password').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = parseInt(btn.getAttribute('data-id')!, 10);
+        const username = btn.getAttribute('data-username') || 'User';
+        this.openPasswordModal(id, username);
+      });
     });
 
     this.querySelectorAll('.btn-delete-user').forEach((btn) => {

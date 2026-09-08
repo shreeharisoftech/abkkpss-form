@@ -1,0 +1,9 @@
+{
+  "PORT": 3003,
+  "JWT_SECRET": "4465sda&$%Wdd!@DD@#@!!ADS",
+  "MYSQL_HOST": "localhost",
+  "MYSQL_PORT": 3306,
+  "MYSQL_USER": "root",
+  "MYSQL_PASSWORD": "bwGIan2mgtAeXt",
+  "MYSQL_DATABASE": "abkkpss_forms_db"
+}

@@ -47,12 +47,8 @@ async function build() {
   const distAssetsDir = path.resolve(distDir, 'assets');
   const distPublicAssetsDir = path.resolve(distPublicDir, 'assets');
   if (fs.existsSync(srcAssetsDir)) {
-    if (!fs.existsSync(distAssetsDir)) fs.mkdirSync(distAssetsDir, { recursive: true });
-    if (!fs.existsSync(distPublicAssetsDir)) fs.mkdirSync(distPublicAssetsDir, { recursive: true });
-    for (const file of fs.readdirSync(srcAssetsDir)) {
-      fs.copyFileSync(path.join(srcAssetsDir, file), path.join(distAssetsDir, file));
-      fs.copyFileSync(path.join(srcAssetsDir, file), path.join(distPublicAssetsDir, file));
-    }
+    fs.cpSync(srcAssetsDir, distAssetsDir, { recursive: true });
+    fs.cpSync(srcAssetsDir, distPublicAssetsDir, { recursive: true });
   }
 
   console.log('✅ [Build] Frontend assets compiled to dist/public');
@@ -64,7 +60,8 @@ async function build() {
   const externalDependencies = [
     'mysql2',
     'sqlite3',
-    'whatsapp-web.js',
+    '@whiskeysockets/baileys',
+    'pino',
     'bcryptjs',
     'pdfkit',
   ];
@@ -153,19 +150,12 @@ Configure your MySQL database connection and server settings in \`_env.json\`:
   "MYSQL_USER": "root",
   "MYSQL_PASSWORD": "",
   "MYSQL_DATABASE": "abkkpss_forms_db",
-  "PUPPETEER_EXECUTABLE_PATH": ""
+  "ENABLE_WHATSAPP": true
 }
 \`\`\`
 
-## Linux Host WhatsApp Requirements (Chromium)
-If deploying on a Linux server/VPS (Ubuntu/Debian), install Chromium dependencies so WhatsApp Web headless browser can launch:
-\`\`\`bash
-npx puppeteer browsers install chrome --install-deps
-\`\`\`
-Or install system Chromium via apt:
-\`\`\`bash
-apt-get update && apt-get install -y chromium
-\`\`\`
+## WhatsApp Integration (Baileys)
+WhatsApp messaging is powered by **Baileys** (direct WebSocket client). It requires **no Chromium, Puppeteer, or browser binaries**. Session credentials are automatically managed in \`data/baileys_auth\`.
 
 ## Deployment & Run
 1. Run \`npm install\` (if deploying on a new host without node_modules).

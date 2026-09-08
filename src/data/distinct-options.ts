@@ -11,7 +11,7 @@ export const STANDARD_ZONES: ZoneOption[] = [
   { code: '04', name: 'South Gujarat', label: '04 - South Gujarat' },
   { code: '05', name: 'North Gujarat', label: '05 - North Gujarat' },
   { code: '06', name: 'Saurashtra', label: '06 - Saurashtra' },
-  { code: '07', name: 'Morbi', label: '07 - Morbi' },
+  { code: '07', name: 'Indore', label: '07 - Indore' },
   { code: '08', name: 'South India', label: '08 - South India' },
   { code: '09', name: 'Maharastra', label: '09 - Maharastra' },
   { code: '10', name: 'East Kutch', label: '10 - East Kutch' },

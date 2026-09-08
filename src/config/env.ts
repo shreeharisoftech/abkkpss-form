@@ -10,6 +10,7 @@ export interface AppEnvConfig {
   MYSQL_PASSWORD: string;
   MYSQL_DATABASE: string;
   PUPPETEER_EXECUTABLE_PATH?: string;
+  ENABLE_WHATSAPP?: boolean;
 }
 
 const DEFAULT_CONFIG: AppEnvConfig = {
@@ -63,6 +64,12 @@ export function loadEnvConfig(): AppEnvConfig {
     ),
     MYSQL_DATABASE: String(process.env.MYSQL_DATABASE || fileConfig.MYSQL_DATABASE || DEFAULT_CONFIG.MYSQL_DATABASE),
     PUPPETEER_EXECUTABLE_PATH: process.env.PUPPETEER_EXECUTABLE_PATH || fileConfig.PUPPETEER_EXECUTABLE_PATH || undefined,
+    ENABLE_WHATSAPP:
+      process.env.ENABLE_WHATSAPP !== undefined
+        ? process.env.ENABLE_WHATSAPP !== 'false' && process.env.ENABLE_WHATSAPP !== '0'
+        : fileConfig.ENABLE_WHATSAPP !== undefined
+        ? Boolean(fileConfig.ENABLE_WHATSAPP)
+        : true,
   };
 
   return cachedConfig;

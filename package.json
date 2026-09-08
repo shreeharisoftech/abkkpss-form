@@ -21,6 +21,7 @@
     "@autocode-ts/ac-web": "file:F:/Packages/AutoCode/Github/autocode-typescript/dist/packages/node/ac-web",
     "@autocode-ts/ac-web-on-express": "file:F:/Packages/AutoCode/Github/autocode-typescript/dist/packages/node/ac-web-on-express",
     "@autocode-ts/autocode": "file:F:/Packages/AutoCode/Github/autocode-typescript/dist/packages/common/autocode",
+    "@whiskeysockets/baileys": "^6.7.24",
     "axios": "^1.6.0",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.6",
@@ -32,13 +33,13 @@
     "multer": "^1.4.5-lts.1",
     "mysql2": "^3.24.3",
     "pdfkit": "^0.15.0",
+    "pino": "^10.3.1",
     "qrcode": "^1.5.3",
     "reflect-metadata": "^0.2.2",
     "sqlite": "^5.1.1",
     "sqlite3": "^5.1.7",
     "tslib": "^2.6.2",
-    "uuid": "^11.1.0",
-    "whatsapp-web.js": "^1.26.0"
+    "uuid": "^11.1.0"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
