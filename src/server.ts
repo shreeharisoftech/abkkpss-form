@@ -10,6 +10,7 @@ import { FormsController } from './controllers/forms.controller';
 import { ApprovalController } from './controllers/approval.controller';
 import { WhatsAppController } from './controllers/whatsapp.controller';
 import { UsersController } from './controllers/users.controller';
+import { PublicController } from './controllers/public.controller';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -105,6 +106,7 @@ export async function createServer(port?: number, dbConfig?: MySqlDbConfig): Pro
   app.registerController({ controllerClass: ApprovalController });
   app.registerController({ controllerClass: WhatsAppController });
   app.registerController({ controllerClass: UsersController });
+  app.registerController({ controllerClass: PublicController });
 
   // 6. Start the web server
   const startResult = await app.start();

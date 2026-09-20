@@ -79,6 +79,7 @@ export class AbkkpssAppElement extends HTMLElement {
   currentUser: CurrentUser | null = null;
   token: string | null = null;
   activeTab: 'form' | 'submissions' | 'superadmin' = 'form';
+  showLoginForm: boolean = false;
 
   // Submission & Edit State
   isSubmitting: boolean = false;
@@ -104,7 +105,7 @@ export class AbkkpssAppElement extends HTMLElement {
 
   // Submissions state
   submissions: any[] = [];
-  submissionsFilter: 'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED' = 'ALL';
+  submissionsFilter: 'ALL' | 'PENDING' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' = 'ALL';
   submissionsSearch: string = '';
   submissionsPage: number = 1;
   submissionsPageSize: number = 10;
@@ -241,8 +242,8 @@ export class AbkkpssAppElement extends HTMLElement {
     }
 
     this.render();
-    this.loadDistinctValues();
     if (this.token) {
+      this.loadDistinctValues();
       this.verifyAuth();
     }
   }
@@ -356,6 +357,7 @@ export class AbkkpssAppElement extends HTMLElement {
           localStorage.setItem('abkkpss_user', JSON.stringify(data.user));
           this.formData = this.getDefaultFormData();
           this.render();
+          this.loadDistinctValues();
           this.loadSubmissions();
         } else {
           alert(data.error || 'Login failed');
@@ -818,6 +820,7 @@ export class AbkkpssAppElement extends HTMLElement {
           this.submissionsPageSize = data.pageSize || 10;
           this.submissionsTotalPages = data.totalPages || 1;
           this.renderSubmissionsList();
+          this.attachSubmissionsListeners();
         }
       } catch (err) {
         console.error('Failed to load submissions', err);
@@ -844,7 +847,7 @@ export class AbkkpssAppElement extends HTMLElement {
   }
 
   async approveSubmission(formId: number) {
-    if (!confirm('Approve this form, assign member numbers, generate PDF receipt, and dispatch via WhatsApp?')) {
+    if (!confirm('Approve this form and assign member numbers?')) {
       return;
     }
 
@@ -856,7 +859,7 @@ export class AbkkpssAppElement extends HTMLElement {
         });
         const data = await res.json();
         if (data.success) {
-          alert(`Approved! Receipt No: ${data.receiptNumber}\nWhatsApp Dispatch: ${data.whatsappDispatch?.message}`);
+          alert(`Approved! Receipt No: ${data.receiptNumber}`);
           this.showApprovalModal = false;
           this.loadSubmissions();
           this.render();
@@ -866,7 +869,55 @@ export class AbkkpssAppElement extends HTMLElement {
       } catch (err: any) {
         alert('Approval error: ' + err.message);
       }
-    }, 'Approving submission, assigning member IDs & generating receipt PDF...', 'Approval & Receipt');
+    }, 'Approving submission & assigning member IDs...', 'Approval');
+  }
+
+  async submitFormStatus(formId: number) {
+    if (!confirm('Submit this form for approval? It will no longer be editable after submission.')) {
+      return;
+    }
+
+    return this.withLoading(async () => {
+      try {
+        const res = await fetch(`/api/forms/${formId}/submit`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${this.token}` },
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert('Form submitted for approval!');
+          this.loadSubmissions();
+          this.render();
+        } else {
+          alert(data.error || 'Submit failed');
+        }
+      } catch (err: any) {
+        alert('Submit error: ' + err.message);
+      }
+    }, 'Submitting form...', 'Submit');
+  }
+
+  async sendWhatsApp(formId: number) {
+    if (!confirm('Send WhatsApp receipts to the main member for this form?')) {
+      return;
+    }
+
+    return this.withLoading(async () => {
+      try {
+        const res = await fetch(`/api/forms/${formId}/send-whatsapp`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${this.token}` },
+        });
+        const data = await res.json();
+        if (data.success) {
+          alert(data.message || 'WhatsApp receipts sent!');
+        } else {
+          alert(data.error || 'WhatsApp send failed');
+        }
+      } catch (err: any) {
+        alert('WhatsApp error: ' + err.message);
+      }
+    }, 'Sending WhatsApp receipts...', 'WhatsApp');
   }
 
   async rejectSubmission(formId: number) {
@@ -1302,7 +1353,7 @@ export class AbkkpssAppElement extends HTMLElement {
 
       <!-- Navigation Tabs for Mobile & Desktop -->
       <div class="container-fluid bg-white border-bottom shadow-sm">
-        <div class="container py-2">
+        <div class="container-fluid py-2 px-md-4">
           <ul class="nav nav-pills nav-fill gap-1">
             <li class="nav-item">
               <button class="nav-link touch-btn w-100 ${this.activeTab === 'form' ? 'active' : ''}" id="tab-form">
@@ -1329,7 +1380,7 @@ export class AbkkpssAppElement extends HTMLElement {
       </div>
 
       <!-- Main Content Container -->
-      <main class="container my-3">
+      <main class="container-fluid my-3 px-md-4">
         ${this.renderActiveTabContent()}
       </main>
 
@@ -1354,24 +1405,38 @@ export class AbkkpssAppElement extends HTMLElement {
 
   renderAuthView(): string {
     return `
-      <div class="container py-5">
+      <!-- Top Navbar with Login Button -->
+      <nav class="navbar abkkpss-navbar px-3 py-2 text-white">
+        <div class="container-fluid d-flex justify-content-between align-items-center">
+          <a class="navbar-brand mb-0 text-white" href="#" id="brand-home-public">
+            <span class="fw-bold"><span class="d-none d-sm-inline">ABKKPSS - </span>Membership Portal</span>
+            <br><small class="text-warning">Shree Akhil Bharatiya Kutch Kadwa Patidar Satsang Samaj</small>
+          </a>
+          <button class="btn btn-sm ${this.showLoginForm ? 'btn-outline-light' : 'btn-warning fw-bold'}" id="btn-toggle-login">
+            <i class="bi ${this.showLoginForm ? 'bi-search' : 'bi-box-arrow-in-right'} me-1"></i>${this.showLoginForm ? 'Status Check' : 'Login'}
+          </button>
+        </div>
+      </nav>
+
+      <div class="${this.showLoginForm ? 'container' : 'container-fluid px-md-4'} py-4">
         <div class="row justify-content-center">
-          <div class="col-12 col-sm-10 col-md-8 col-lg-5">
-            <div class="card border-0 shadow-lg" style="border-radius: 16px; overflow: hidden;">
+          <div class="${this.showLoginForm ? 'col-12 col-sm-10 col-md-8 col-lg-5' : 'col-12'}">
+            ${this.showLoginForm ? `
+            <!-- Login Form -->
+            <div class="card border-0 shadow-lg mx-auto" style="border-radius: 16px; overflow: hidden; max-width: 480px;">
               <div class="card-header text-center py-4 abkkpss-navbar text-white">
-                <h4 class="mb-1 fw-bold">ABKKPSS Membership Portal</h4>
-                <p class="mb-0 text-warning small">Shree Akhil Bharatiya Kutch Kadwa Patidar Satsang Samaj</p>
+                <h4 class="mb-1 fw-bold">Login</h4>
                 <div class="mt-2"><span class="badge bg-light text-dark px-3 py-1">Physical Form Digitization System</span></div>
               </div>
               <div class="card-body p-4">
                 <form id="login-form">
                   <div class="mb-3">
                     <label class="form-label fw-semibold">Username</label>
-                    <input type="text" id="login-username" class="form-control form-control-lg" placeholder="Enter username" required />
+                    <input type="text" id="login-username" class="form-control form-control-lg" placeholder="Enter username" name="username" autocomplete="username" required />
                   </div>
                   <div class="mb-4">
                     <label class="form-label fw-semibold">Password</label>
-                    <input type="password" id="login-password" class="form-control form-control-lg" placeholder="Enter password" required />
+                    <input type="password" id="login-password" class="form-control form-control-lg" placeholder="Enter password" name="password" autocomplete="current-password" required />
                   </div>
                   <button type="submit" class="btn btn-primary touch-btn w-100 py-3 fw-bold" style="background-color: var(--abkkpss-primary); border: none;">
                     Login
@@ -1379,6 +1444,29 @@ export class AbkkpssAppElement extends HTMLElement {
                 </form>
               </div>
             </div>
+            ` : `
+            <!-- Public Status Check Section (Default Home) -->
+            <div class="card border-0 shadow-lg" style="border-radius: 16px; overflow: hidden;">
+              <div class="card-header bg-success text-white text-center py-4">
+                <h4 class="mb-1 fw-bold"><i class="bi bi-search me-2"></i>Check Your Application Status</h4>
+                <p class="mb-0 small">No login required — enter your registered mobile number below</p>
+              </div>
+              <div class="card-body p-4">
+                <div class="row justify-content-center">
+                  <div class="col-12 col-md-8 col-lg-6">
+                    <div class="input-group input-group-lg">
+                      <span class="input-group-text"><i class="bi bi-phone"></i></span>
+                      <input type="tel" id="public-mobile-input" class="form-control" placeholder="Enter your 10-digit mobile number" maxlength="10" />
+                      <button type="button" class="btn btn-success fw-bold" id="btn-public-status-check">
+                        <i class="bi bi-search me-1"></i> Check
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div id="public-status-result" class="mt-3"></div>
+              </div>
+            </div>
+            `}
           </div>
         </div>
       </div>
@@ -1398,7 +1486,7 @@ export class AbkkpssAppElement extends HTMLElement {
     const totalFee = this.getTotalAmount();
 
     return `
-      <form id="abkkpss-entry-form">
+      <form id="abkkpss-entry-form" novalidate>
         <!-- Success and Edit Alert Banners -->
         ${
           this.successBannerMessage
@@ -1435,14 +1523,13 @@ export class AbkkpssAppElement extends HTMLElement {
           <div class="card-body p-3">
             <div class="row g-2 align-items-end">
               <div class="col-12 col-md-4">
-                <label class="form-label fw-semibold">Zone <span class="text-danger">*</span></label>
+                <label class="form-label fw-semibold">Zone <span class="text-danger">*</span>${isRegular ? `<small class="text-muted">Assigned to ${this.getZoneLabel(this.currentUser?.zone_id)}</small>` : ''}</label>
                 <select class="form-select" id="field-zone-number" ${isRegular ? 'disabled' : ''} required>
                   <option value="">-- Select Zone --</option>
                   ${STANDARD_ZONES.map(
                     (z) => `<option value="${z.code}" ${this.formData.zone_number === z.code ? 'selected' : ''}>${z.label}</option>`
                   ).join('')}
                 </select>
-                ${isRegular ? `<small class="text-muted">Assigned to ${this.getZoneLabel(this.currentUser?.zone_id)}</small>` : ''}
               </div>
               <div class="col-12 col-md-4">
                 <label class="form-label fw-semibold">Family No <span class="text-danger">*</span></label>
@@ -1819,7 +1906,8 @@ export class AbkkpssAppElement extends HTMLElement {
             <div class="col-12 col-md-5">
               <div class="btn-group w-100" role="group">
                 <button type="button" class="btn btn-outline-primary btn-sm btn-filter ${this.submissionsFilter === 'ALL' ? 'active' : ''}" data-filter="ALL">All</button>
-                <button type="button" class="btn btn-outline-warning btn-sm btn-filter ${this.submissionsFilter === 'PENDING' ? 'active' : ''}" data-filter="PENDING">Pending</button>
+                <button type="button" class="btn btn-outline-secondary btn-sm btn-filter ${this.submissionsFilter === 'PENDING' ? 'active' : ''}" data-filter="PENDING">Pending</button>
+                <button type="button" class="btn btn-outline-info btn-sm btn-filter ${this.submissionsFilter === 'SUBMITTED' ? 'active' : ''}" data-filter="SUBMITTED">Submitted</button>
                 <button type="button" class="btn btn-outline-success btn-sm btn-filter ${this.submissionsFilter === 'APPROVED' ? 'active' : ''}" data-filter="APPROVED">Approved</button>
                 <button type="button" class="btn btn-outline-danger btn-sm btn-filter ${this.submissionsFilter === 'REJECTED' ? 'active' : ''}" data-filter="REJECTED">Rejected</button>
               </div>
@@ -1951,7 +2039,9 @@ export class AbkkpssAppElement extends HTMLElement {
                       ? '<span class="badge bg-success">APPROVED</span>'
                       : f.status === 'REJECTED'
                       ? '<span class="badge bg-danger">REJECTED</span>'
-                      : '<span class="badge bg-warning text-dark">PENDING</span>'
+                      : f.status === 'SUBMITTED'
+                      ? '<span class="badge bg-info text-dark">SUBMITTED</span>'
+                      : '<span class="badge bg-secondary">PENDING</span>'
                   }
                 </div>
               </div>
@@ -1964,9 +2054,9 @@ export class AbkkpssAppElement extends HTMLElement {
                 ${f.receipt_number ? `<div class="text-success fw-bold"><i class="bi bi-receipt me-1"></i> Receipt No: ${f.receipt_number}</div>` : ''}
               </div>
 
-              <div class="d-flex gap-2 mt-3">
+              <div class="d-flex gap-2 mt-3 flex-wrap">
                 <button class="btn btn-sm btn-outline-primary flex-fill btn-view-submission" data-id="${f.id}">
-                  <i class="bi bi-eye"></i> View Details
+                  <i class="bi bi-eye"></i> View
                 </button>
                 ${
                   f.status !== 'APPROVED'
@@ -1976,16 +2066,19 @@ export class AbkkpssAppElement extends HTMLElement {
                     : ''
                 }
                 ${
-                  f.status === 'APPROVED'
-                    ? `<a href="/api/forms/${f.id}/receipt" target="_blank" class="btn btn-sm btn-success flex-fill">
-                        <i class="bi bi-file-earmark-pdf"></i> Receipt PDF
-                      </a>`
+                  isAdmin && (f.status === 'SUBMITTED' || f.status === 'PENDING')
+                    ? `<button class="btn btn-sm btn-warning flex-fill btn-approve-modal-trigger" data-id="${f.id}">
+                        <i class="bi bi-check-circle"></i> Approve
+                      </button>`
                     : ''
                 }
                 ${
-                  isAdmin && f.status === 'PENDING'
-                    ? `<button class="btn btn-sm btn-warning flex-fill btn-approve-modal-trigger" data-id="${f.id}">
-                        <i class="bi bi-check-circle"></i> Review & Approve
+                  f.status === 'APPROVED'
+                    ? `<a href="/api/forms/${f.id}/receipt" target="_blank" class="btn btn-sm btn-success flex-fill">
+                        <i class="bi bi-file-earmark-pdf"></i> Receipt
+                      </a>
+                      <button class="btn btn-sm btn-outline-success flex-fill btn-send-whatsapp" data-id="${f.id}">
+                        <i class="bi bi-whatsapp"></i> WhatsApp
                       </button>`
                     : ''
                 }
@@ -2035,7 +2128,9 @@ export class AbkkpssAppElement extends HTMLElement {
                       ? '<span class="badge bg-success">APPROVED</span>'
                       : f.status === 'REJECTED'
                       ? '<span class="badge bg-danger">REJECTED</span>'
-                      : '<span class="badge bg-warning text-dark">PENDING</span>'
+                      : f.status === 'SUBMITTED'
+                      ? '<span class="badge bg-info text-dark">SUBMITTED</span>'
+                      : '<span class="badge bg-secondary">PENDING</span>'
                   }
                 </td>
                 <td class="text-end">
@@ -2047,13 +2142,14 @@ export class AbkkpssAppElement extends HTMLElement {
                         : ''
                     }
                     ${
-                      f.status === 'APPROVED'
-                        ? `<a href="/api/forms/${f.id}/receipt" target="_blank" class="btn btn-outline-success" title="PDF Receipt"><i class="bi bi-file-earmark-pdf"></i></a>`
+                      isAdmin && (f.status === 'SUBMITTED' || f.status === 'PENDING')
+                        ? `<button class="btn btn-warning btn-approve-modal-trigger" data-id="${f.id}" title="Approve"><i class="bi bi-check-circle"></i></button>`
                         : ''
                     }
                     ${
-                      isAdmin && f.status === 'PENDING'
-                        ? `<button class="btn btn-warning btn-approve-modal-trigger" data-id="${f.id}" title="Approve"><i class="bi bi-check-circle"></i></button>`
+                      f.status === 'APPROVED'
+                        ? `<a href="/api/forms/${f.id}/receipt" target="_blank" class="btn btn-outline-success" title="PDF Receipt"><i class="bi bi-file-earmark-pdf"></i></a>
+                           <button class="btn btn-outline-success btn-send-whatsapp" data-id="${f.id}" title="Send WhatsApp"><i class="bi bi-whatsapp"></i></button>`
                         : ''
                     }
                   </div>
@@ -2153,7 +2249,7 @@ export class AbkkpssAppElement extends HTMLElement {
                   </div>
                   <div class="col-6">
                     <label class="form-label small">Password *</label>
-                    <input type="password" class="form-control form-control-sm" id="new-password" required />
+                    <input type="password" class="form-control form-control-sm" id="new-password" name="new-password" autocomplete="new-password" required />
                   </div>
                   <div class="col-6">
                     <label class="form-label small">Role *</label>
@@ -2459,17 +2555,17 @@ export class AbkkpssAppElement extends HTMLElement {
                     ? `
                 <div class="mb-3">
                   <label class="form-label small fw-semibold">Current Password *</label>
-                  <input type="password" class="form-control" id="modal-current-pass" placeholder="Enter current password" required />
+                  <input type="password" class="form-control" id="modal-current-pass" placeholder="Enter current password" name="current-password" autocomplete="current-password" required />
                 </div>`
                     : ''
                 }
                 <div class="mb-3">
                   <label class="form-label small fw-semibold">New Password *</label>
-                  <input type="password" class="form-control" id="modal-new-pass" minlength="4" placeholder="At least 4 characters" required />
+                  <input type="password" class="form-control" id="modal-new-pass" minlength="4" placeholder="At least 4 characters" name="new-password" autocomplete="new-password" required />
                 </div>
                 <div class="mb-3">
                   <label class="form-label small fw-semibold">Confirm Password *</label>
-                  <input type="password" class="form-control" id="modal-confirm-pass" minlength="4" placeholder="Re-enter new password" required />
+                  <input type="password" class="form-control" id="modal-confirm-pass" minlength="4" placeholder="Re-enter new password" name="confirm-password" autocomplete="new-password" required />
                 </div>
                 <div class="form-check mb-3">
                   <input class="form-check-input" type="checkbox" id="modal-show-pass" />
@@ -2558,7 +2654,7 @@ export class AbkkpssAppElement extends HTMLElement {
   renderModalContent(): string {
     if (!this.showApprovalModal || !this.selectedSubmission) return '';
     const { form, members } = this.selectedSubmission;
-    const isPending = form.status === 'PENDING';
+    const isPending = form.status === 'PENDING' || form.status === 'SUBMITTED';
     const isAdmin = this.currentUser?.role === 'ADMIN' || this.currentUser?.role === 'SUPER_ADMIN';
 
     return `
@@ -2577,7 +2673,7 @@ export class AbkkpssAppElement extends HTMLElement {
                 <div>
                   <span class="badge bg-primary fs-6 me-1">${this.getZoneLabel(form.zone_number)}</span>
                   <span class="badge bg-secondary fs-6 me-1">Family #${form.family_number}</span>
-                  <span class="badge ${form.status === 'APPROVED' ? 'bg-success' : 'bg-warning text-dark'} fs-6">
+                  <span class="badge ${form.status === 'APPROVED' ? 'bg-success' : form.status === 'SUBMITTED' ? 'bg-info text-dark' : form.status === 'REJECTED' ? 'bg-danger' : 'bg-secondary'} fs-6">
                     ${form.status}
                   </span>
                 </div>
@@ -2741,6 +2837,134 @@ export class AbkkpssAppElement extends HTMLElement {
         this.login(u, p);
       });
     });
+
+    // Toggle between login and status check views
+    this.querySelector('#btn-toggle-login')?.addEventListener('click', () => {
+      this.showLoginForm = !this.showLoginForm;
+      this.render();
+    });
+
+    // Brand click navigates back to status check (home)
+    this.querySelector('#brand-home-public')?.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (this.showLoginForm) {
+        this.showLoginForm = false;
+        this.render();
+      }
+    });
+
+    // Public status check button
+    this.querySelector('#btn-public-status-check')?.addEventListener('click', () => this.checkPublicStatus());
+    this.querySelector('#public-mobile-input')?.addEventListener('keydown', (e: any) => {
+      if (e.key === 'Enter') this.checkPublicStatus();
+    });
+  }
+
+  async checkPublicStatus() {
+    const input = this.querySelector('#public-mobile-input') as HTMLInputElement;
+    const resultDiv = this.querySelector('#public-status-result') as HTMLElement;
+    if (!input || !resultDiv) return;
+
+    const mobile = input.value.replace(/\D/g, '').slice(-10);
+    if (mobile.length !== 10) {
+      resultDiv.innerHTML = '<div class="alert alert-warning"><i class="bi bi-exclamation-triangle me-2"></i>Please enter a valid 10-digit mobile number.</div>';
+      return;
+    }
+
+    resultDiv.innerHTML = '<div class="text-center py-3"><div class="spinner-border text-success" role="status"></div><div class="mt-2">Checking...</div></div>';
+
+    try {
+      const res = await fetch(`/api/public/status?mobile=${mobile}`);
+      const raw = await res.json();
+      const data = raw.data || raw;
+
+      if (!data.success) {
+        resultDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle me-2"></i>${data.error || 'Error checking status.'}</div>`;
+        return;
+      }
+
+      if (!data.found || !data.forms || data.forms.length === 0) {
+        resultDiv.innerHTML = '<div class="alert alert-info"><i class="bi bi-info-circle me-2"></i>No application found for this mobile number.</div>';
+        return;
+      }
+
+      const formsHtml = data.forms.map((f: any) => {
+        const statusBadge = f.status === 'APPROVED'
+          ? '<span class="badge bg-success fs-6">APPROVED</span>'
+          : f.status === 'SUBMITTED'
+          ? '<span class="badge bg-info text-dark fs-6">SUBMITTED</span>'
+          : '<span class="badge bg-secondary fs-6">PENDING</span>';
+
+        const membersHtml = (f.members || []).map((m: any, idx: number) => `
+          <tr>
+            <td class="text-center">${idx + 1}</td>
+            <td class="fw-semibold">${m.name}${m.is_main_member ? ' <span class="badge bg-primary-subtle text-primary">Main</span>' : ''}</td>
+            <td>${m.relation || '-'}</td>
+            <td>${m.dob || '-'}</td>
+            <td>${m.gender || '-'}</td>
+            <td>${m.is_adult_18_plus ? '<span class="badge bg-success">18+</span>' : '<span class="badge bg-secondary">&lt;18</span>'}</td>
+            <td class="fw-bold text-primary">${m.fixed_member_number ? m.fixed_member_number.slice(-5) : '-'}</td>
+            ${f.status === 'APPROVED' ? `<td class="text-center"><a href="/api/public/receipt/${f.id}?mobile=${mobile}&memberId=${m.serial_no}" target="_blank" class="btn btn-sm btn-outline-success p-1" title="Download"><i class="bi bi-download"></i></a></td>` : '<td>-</td>'}
+          </tr>
+        `).join('');
+
+        return `
+          <div class="card border-0 shadow-sm mb-3">
+            <div class="card-header bg-light d-flex justify-content-between align-items-center py-2">
+              <div>
+                <span class="badge bg-primary me-1">Zone ${f.zone_number}</span>
+                <span class="badge bg-secondary">Family #${f.family_number}</span>
+              </div>
+              ${statusBadge}
+            </div>
+            <div class="card-body p-3">
+              <div class="row g-2 mb-3 small">
+                <div class="col-6"><strong>Head of Family:</strong> ${f.filler_name}</div>
+                <div class="col-6"><strong>Surname / Gotra:</strong> ${f.surname} (${f.gotra || '-'})</div>
+                <div class="col-6"><strong>Native Place:</strong> ${f.native_place || '-'}</div>
+                <div class="col-6"><strong>City:</strong> ${f.city_name || '-'}</div>
+                <div class="col-6"><strong>Address:</strong> ${[f.address_line_1, f.address_line_2, f.city_name, f.state_name, f.pincode].filter(Boolean).join(', ')}</div>
+                <div class="col-6"><strong>Taluka / District:</strong> ${f.taluka || '-'} / ${f.district || '-'}</div>
+                ${f.firm_name ? `<div class="col-6"><strong>Firm:</strong> ${f.firm_name}</div>` : ''}
+                <div class="col-6"><strong>18+ Members:</strong> ${f.total_adults_count} | <strong>Amount:</strong> ₹${f.total_amount}</div>
+                ${f.receipt_number ? `<div class="col-12 text-success fw-bold"><strong>Receipt No:</strong> ${f.receipt_number}</div>` : ''}
+              </div>
+
+              <h6 class="fw-bold border-bottom pb-1">Members</h6>
+              <div class="table-responsive">
+                <table class="table table-sm table-bordered align-middle small mb-0">
+                  <thead class="table-light">
+                    <tr>
+                      <th>#</th><th>Name</th><th>Relation</th><th>DOB</th><th>Gender</th><th>18+</th><th>Member ID</th><th>Receipt</th>
+                    </tr>
+                  </thead>
+                  <tbody>${membersHtml}</tbody>
+                </table>
+              </div>
+
+              ${f.status === 'APPROVED' ? `
+                <div class="mt-3 d-flex gap-2">
+                  <a href="/api/public/receipt/${f.id}?mobile=${mobile}" target="_blank" class="btn btn-success flex-fill">
+                    <i class="bi bi-file-earmark-pdf me-1"></i> Download Full Family Receipt
+                  </a>
+                </div>
+              ` : `
+                <div class="alert alert-info mt-3 mb-0 py-2 small">
+                  <i class="bi bi-hourglass-split me-1"></i> Your application is <strong>${f.status}</strong>. Receipt will be available once approved.
+                </div>
+              `}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      resultDiv.innerHTML = `
+        <h6 class="fw-bold text-success mb-3"><i class="bi bi-check-circle me-1"></i> ${data.count} Application(s) Found</h6>
+        ${formsHtml}
+      `;
+    } catch (err: any) {
+      resultDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle me-2"></i>Error: ${err.message}</div>`;
+    }
   }
 
   attachGlobalListeners() {
@@ -2800,6 +3024,83 @@ export class AbkkpssAppElement extends HTMLElement {
 
     bindField('#field-zone-number', 'zone_number');
     bindField('#field-family-number', 'family_number');
+
+    // Auto-lookup existing form when zone + family number are entered
+    const autoLookupForm = async () => {
+      const zone = this.formData.zone_number;
+      const family = this.formData.family_number;
+      if (!zone || !family || this.editingFormId) return;
+
+      try {
+        const res = await fetch(`/api/forms/lookup?zone=${encodeURIComponent(zone)}&family=${encodeURIComponent(family)}`, {
+          headers: { Authorization: `Bearer ${this.token}` },
+        });
+        const data = await res.json();
+        if (data.found && data.form && data.form.status !== 'APPROVED') {
+          const form = data.form;
+          this.editingFormId = form.id;
+          this.formData.surname = form.surname || '';
+          this.formData.gotra = form.gotra || '';
+          this.formData.native_place = form.native_place || '';
+          this.formData.address_line_1 = form.address_line_1 || '';
+          this.formData.address_line_2 = form.address_line_2 || '';
+          this.formData.city_name = form.city_name || '';
+          this.formData.state_name = form.state_name || 'Gujarat';
+          this.formData.country_name = form.country_name || 'India';
+          this.formData.pincode = form.pincode || '';
+          this.formData.taluka = form.taluka || '';
+          this.formData.district = form.district || '';
+          this.formData.firm_name = form.firm_name || '';
+          this.formData.firm_address_line_1 = form.firm_address_line_1 || '';
+          this.formData.firm_address_line_2 = form.firm_address_line_2 || '';
+          this.formData.firm_city_name = form.firm_city_name || '';
+          this.formData.firm_state_name = form.firm_state_name || 'Gujarat';
+          this.formData.firm_country_name = form.firm_country_name || 'India';
+          this.formData.firm_postal_code = form.firm_postal_code || '';
+
+          if (data.members && data.members.length > 0) {
+            let hasMain = false;
+            this.formData.members = data.members.map((m: any, idx: number) => {
+              let fn = m.first_name || '';
+              let mn = m.middle_name || '';
+              let ln = m.last_name || form.surname || '';
+              if (!fn && m.name) {
+                const parts = m.name.split(' ');
+                fn = parts[0] || '';
+                mn = parts.length > 2 ? parts.slice(1, -1).join(' ') : '';
+                ln = parts.length > 1 ? parts[parts.length - 1] : form.surname || '';
+              }
+              const isMain = m.is_main_member === true || m.is_main_member === 1;
+              if (isMain) hasMain = true;
+              return {
+                first_name: fn,
+                middle_name: mn,
+                last_name: ln,
+                name: m.name || '',
+                dob: m.dob || '',
+                gender: m.gender || 'Male',
+                relation: m.relation || (idx === 0 ? 'Self' : ''),
+                education: m.education || '',
+                mobile_number: m.mobile_number || '',
+                blood_group: m.blood_group || '',
+                is_main_member: isMain,
+                is_adult_18_plus: m.is_adult_18_plus || false,
+              };
+            });
+            if (!hasMain && this.formData.members.length > 0) {
+              this.formData.members[0].is_main_member = true;
+            }
+          }
+
+          this.successBannerMessage = `Loaded existing form #${form.id} (${form.status}) for Zone ${zone}, Family #${family}. Make changes and submit.`;
+          this.render();
+        }
+      } catch {}
+    };
+
+    const familyEl = this.querySelector('#field-family-number') as HTMLInputElement;
+    familyEl?.addEventListener('change', autoLookupForm);
+
     bindField('#field-surname', 'surname');
     bindField('#field-gotra', 'gotra');
     bindField('#field-native-place', 'native_place');
@@ -3012,6 +3313,20 @@ export class AbkkpssAppElement extends HTMLElement {
       link.addEventListener('click', () => {
         this.showLoading('Fetching and generating receipt PDF...', 'Receipt Fetch');
         setTimeout(() => this.hideLoading(), 2000);
+      });
+    });
+
+    this.querySelectorAll('.btn-submit-form').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = parseInt(btn.getAttribute('data-id')!, 10);
+        this.submitFormStatus(id);
+      });
+    });
+
+    this.querySelectorAll('.btn-send-whatsapp').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const id = parseInt(btn.getAttribute('data-id')!, 10);
+        this.sendWhatsApp(id);
       });
     });
   }

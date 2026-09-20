@@ -487,6 +487,7 @@ export class DbService {
   }
 
   async getNextUniqueMemberSeq(): Promise<number> {
+    const MIN_SEQ = 10000; // First assigned number will be 10001
     try {
       const rawConn = await this.dao.getConnectionObject({ includeDatabase: true });
       const [rows]: any = await rawConn.execute(
@@ -494,7 +495,7 @@ export class DbService {
       );
       await rawConn.end();
       const maxSeq = rows?.[0]?.max_seq ? parseInt(rows[0].max_seq, 10) : 0;
-      return maxSeq + 1;
+      return Math.max(maxSeq, MIN_SEQ) + 1;
     } catch {
       const res = await this.membersTable.getRows({
         condition: 'unique_member_seq IS NOT NULL',
@@ -507,7 +508,7 @@ export class DbService {
           }
         }
       }
-      return maxSeq + 1;
+      return Math.max(maxSeq, MIN_SEQ) + 1;
     }
   }
 
@@ -559,12 +560,23 @@ export class DbService {
   }
 
   async getNextReceiptNumber(): Promise<string> {
+    const MIN_RECEIPT = 10000; // First receipt will be 10001
     const res = await this.formsTable.getRows({
       condition: "receipt_number IS NOT NULL AND receipt_number != ''",
     });
 
-    const count = (res.isSuccess() ? res.rows.length : 0) + 1;
-    return String(count).padStart(5, '0');
+    let maxNum = 0;
+    if (res.isSuccess()) {
+      for (const row of res.rows as FormRow[]) {
+        const match = String(row.receipt_number || '').match(/\d+/);
+        if (match) {
+          const num = parseInt(match[0], 10);
+          if (num > maxNum) maxNum = num;
+        }
+      }
+    }
+    const next = Math.max(maxNum, MIN_RECEIPT) + 1;
+    return String(next);
   }
 
   async getDistinctValues(): Promise<Record<string, any>> {
@@ -623,5 +635,71 @@ export class DbService {
     }
 
     return result;
+  }
+
+  async findDuplicateForm(zoneNumber: string, familyNumber: string, fillerMobile: string): Promise<FormRow | null> {
+    const mobilePattern = `%${fillerMobile.replace(/\D/g, '').slice(-10)}%`;
+    const res = await this.formsTable.getRows({
+      condition: "zone_number = :zone AND family_number = :family AND filler_mobile LIKE :mobile AND status != 'REJECTED'",
+      parameters: {
+        ':zone': zoneNumber,
+        ':family': familyNumber,
+        ':mobile': mobilePattern,
+      },
+    });
+
+    if (res.isSuccess() && res.rows.length > 0) {
+      return res.rows[0] as FormRow;
+    }
+    return null;
+  }
+
+  async findFormByZoneFamily(zoneNumber: string, familyNumber: string): Promise<{ form: FormRow; members: MemberRow[] } | null> {
+    const res = await this.formsTable.getRows({
+      condition: "zone_number = :zone AND family_number = :family AND status != 'REJECTED'",
+      parameters: {
+        ':zone': zoneNumber,
+        ':family': familyNumber,
+      },
+    });
+
+    if (!res.isSuccess() || res.rows.length === 0) return null;
+
+    const form = res.rows[0] as FormRow;
+    const membersRes = await this.membersTable.getRows({
+      condition: 'form_id = :form_id',
+      parameters: { ':form_id': form.id },
+    });
+    const members = ((membersRes.isSuccess() ? membersRes.rows : []) as MemberRow[]).map(this.enrichMember.bind(this));
+    members.sort((a, b) => (a.serial_no ?? 0) - (b.serial_no ?? 0));
+    return { form, members };
+  }
+
+  async findFormsByMobile(mobile: string): Promise<{ form: FormRow; members: MemberRow[] }[]> {
+    // Normalize: extract last 10 digits
+    let digits = mobile.replace(/\D/g, '');
+    if (digits.startsWith('91') && digits.length === 12) digits = digits.substring(2);
+    if (digits.length !== 10) return [];
+
+    // Search with both formats: "+91 XXXXXXXXXX" and raw digits
+    const searchPattern1 = `%${digits}%`;
+    const res = await this.formsTable.getRows({
+      condition: "filler_mobile LIKE :mobile AND (status = 'SUBMITTED' OR status = 'APPROVED')",
+      parameters: { ':mobile': searchPattern1 },
+    });
+
+    if (!res.isSuccess() || res.rows.length === 0) return [];
+
+    const results: { form: FormRow; members: MemberRow[] }[] = [];
+    for (const row of res.rows as FormRow[]) {
+      const membersRes = await this.membersTable.getRows({
+        condition: 'form_id = :form_id',
+        parameters: { ':form_id': row.id },
+      });
+      const members = ((membersRes.isSuccess() ? membersRes.rows : []) as MemberRow[]).map(this.enrichMember.bind(this));
+      members.sort((a, b) => (a.serial_no ?? 0) - (b.serial_no ?? 0));
+      results.push({ form: row, members });
+    }
+    return results;
   }
 }

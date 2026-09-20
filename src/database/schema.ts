@@ -18,6 +18,7 @@ export enum UserRole {
 
 export enum FormStatus {
   PENDING = 'PENDING',
+  SUBMITTED = 'SUBMITTED',
   APPROVED = 'APPROVED',
   REJECTED = 'REJECTED',
 }

@@ -271,6 +271,215 @@ async function runAllTests() {
     const regToken = regLoginRes.data.token;
     recordPass('POST /api/auth/login authenticates Regular User with Zone 01');
 
+    // 3B. Test Admin User Password Update functionality
+    const userZone01 = await db.getUserByUsername('user_zone01');
+    assert.ok(userZone01?.id, 'user_zone01 must have an id');
+
+    // Reject short password (< 4 chars)
+    try {
+      await axios.post(
+        `${baseUrl}/api/users/${userZone01!.id}/password`,
+        { password: '12' },
+        { headers: { Authorization: `Bearer ${adminToken}` } }
+      );
+      assert.fail('Should reject password shorter than 4 characters');
+    } catch (err: any) {
+      assert.strictEqual(err.response?.status, 400);
+      recordPass('POST /api/users/:id/password rejects passwords shorter than 4 characters with 400');
+    }
+
+    // Reject regular user updating password
+    try {
+      await axios.post(
+        `${baseUrl}/api/users/${userZone01!.id}/password`,
+        { password: 'validpass123' },
+        { headers: { Authorization: `Bearer ${regToken}` } }
+      );
+      assert.fail('Regular user must not be permitted to update passwords');
+    } catch (err: any) {
+      assert.strictEqual(err.response?.status, 403);
+      recordPass('POST /api/users/:id/password blocks non-admin with 403 Forbidden');
+    }
+
+    // Successfully update password via POST /api/users/:id/password
+    const updatePassRes = await axios.post(
+      `${baseUrl}/api/users/${userZone01!.id}/password`,
+      { password: 'newsecretpass123' },
+      { headers: { Authorization: `Bearer ${adminToken}` } }
+    );
+    assert.strictEqual(updatePassRes.status, 200);
+    assert.strictEqual(updatePassRes.data.success, true);
+
+    // Verify old password fails
+    try {
+      await axios.post(`${baseUrl}/api/auth/login`, {
+        username: 'user_zone01',
+        password: 'user123',
+      });
+      assert.fail('Old password should no longer work');
+    } catch (err: any) {
+      assert.strictEqual(err.response?.status, 401);
+    }
+
+    // Verify new password succeeds
+    const newLoginRes = await axios.post(`${baseUrl}/api/auth/login`, {
+      username: 'user_zone01',
+      password: 'newsecretpass123',
+    });
+    assert.strictEqual(newLoginRes.status, 200);
+    assert.strictEqual(newLoginRes.data.success, true);
+    recordPass('POST /api/users/:id/password updates password and enables login with new credentials');
+
+    // Also test PUT /api/users/:id to restore password to user123
+    const putPassRes = await axios.put(
+      `${baseUrl}/api/users/${userZone01!.id}`,
+      { password: 'user123' },
+      { headers: { Authorization: `Bearer ${adminToken}` } }
+    );
+    assert.strictEqual(putPassRes.status, 200);
+    assert.strictEqual(putPassRes.data.success, true);
+    recordPass('PUT /api/users/:id successfully updates user password');
+
+    // 3C. Test Self-Service Password Update via POST /api/auth/update-password
+    // Reject unauthenticated request (no token)
+    try {
+      await axios.post(`${baseUrl}/api/auth/update-password`, {
+        currentPassword: 'user123',
+        newPassword: 'newpass123',
+      });
+      assert.fail('Should reject unauthenticated password update');
+    } catch (err: any) {
+      assert.strictEqual(err.response?.status, 401);
+      recordPass('POST /api/auth/update-password rejects unauthenticated request with 401');
+    }
+
+    // Reject missing current password
+    try {
+      await axios.post(
+        `${baseUrl}/api/auth/update-password`,
+        { newPassword: 'newpass123' },
+        { headers: { Authorization: `Bearer ${regToken}` } }
+      );
+      assert.fail('Should reject missing current password');
+    } catch (err: any) {
+      assert.strictEqual(err.response?.status, 400);
+      recordPass('POST /api/auth/update-password rejects missing current password with 400');
+    }
+
+    // Reject incorrect current password
+    try {
+      await axios.post(
+        `${baseUrl}/api/auth/update-password`,
+        { currentPassword: 'wrongpassword', newPassword: 'newpass123' },
+        { headers: { Authorization: `Bearer ${regToken}` } }
+      );
+      assert.fail('Should reject incorrect current password');
+    } catch (err: any) {
+      assert.strictEqual(err.response?.status, 400);
+      assert.ok(err.response?.data?.error?.includes('incorrect'));
+      recordPass('POST /api/auth/update-password rejects wrong current password with 400');
+    }
+
+    // Reject short new password (< 4 chars)
+    try {
+      await axios.post(
+        `${baseUrl}/api/auth/update-password`,
+        { currentPassword: 'user123', newPassword: '12' },
+        { headers: { Authorization: `Bearer ${regToken}` } }
+      );
+      assert.fail('Should reject short new password');
+    } catch (err: any) {
+      assert.strictEqual(err.response?.status, 400);
+      recordPass('POST /api/auth/update-password rejects short new password (< 4 chars) with 400');
+    }
+
+    // Successfully update password for regular user
+    const selfUpdateRes = await axios.post(
+      `${baseUrl}/api/auth/update-password`,
+      { currentPassword: 'user123', newPassword: 'selfnewpass123' },
+      { headers: { Authorization: `Bearer ${regToken}` } }
+    );
+    assert.strictEqual(selfUpdateRes.status, 200);
+    assert.strictEqual(selfUpdateRes.data.success, true);
+
+    // Verify old password fails
+    try {
+      await axios.post(`${baseUrl}/api/auth/login`, {
+        username: 'user_zone01',
+        password: 'user123',
+      });
+      assert.fail('Old password should fail after self update');
+    } catch (err: any) {
+      assert.strictEqual(err.response?.status, 401);
+    }
+
+    // Verify new password succeeds
+    const selfNewLoginRes = await axios.post(`${baseUrl}/api/auth/login`, {
+      username: 'user_zone01',
+      password: 'selfnewpass123',
+    });
+    assert.strictEqual(selfNewLoginRes.status, 200);
+    const selfNewToken = selfNewLoginRes.data.token;
+    recordPass('POST /api/auth/update-password allows regular user to update their own password');
+
+    // Restore password back to user123
+    await axios.post(
+      `${baseUrl}/api/auth/update-password`,
+      { currentPassword: 'selfnewpass123', newPassword: 'user123' },
+      { headers: { Authorization: `Bearer ${selfNewToken}` } }
+    );
+    recordPass('POST /api/auth/update-password restored user123 password');
+
+    // 3D. Test Edit Username & Role via PUT /api/users/:id
+    // Regular user cannot edit users
+    try {
+      await axios.put(
+        `${baseUrl}/api/users/${userZone01!.id}`,
+        { username: 'hacked_name' },
+        { headers: { Authorization: `Bearer ${regToken}` } }
+      );
+      assert.fail('Regular user must not be permitted to edit users');
+    } catch (err: any) {
+      assert.strictEqual(err.response?.status, 403);
+      recordPass('PUT /api/users/:id blocks non-admin with 403 Forbidden');
+    }
+
+    // Reject duplicate username (409 Conflict)
+    try {
+      await axios.put(
+        `${baseUrl}/api/users/${userZone01!.id}`,
+        { username: 'admin' },
+        { headers: { Authorization: `Bearer ${adminToken}` } }
+      );
+      assert.fail('Should reject already taken username');
+    } catch (err: any) {
+      assert.strictEqual(err.response?.status, 409);
+      assert.ok(err.response?.data?.error?.includes('already exists'));
+      recordPass('PUT /api/users/:id rejects duplicate username with 409 Conflict');
+    }
+
+    // Successfully edit username and role
+    const editUserRes = await axios.put(
+      `${baseUrl}/api/users/${userZone01!.id}`,
+      { username: 'user_zone01_edited', role: UserRole.ADMIN, zone_id: '01' },
+      { headers: { Authorization: `Bearer ${adminToken}` } }
+    );
+    assert.strictEqual(editUserRes.status, 200);
+    assert.strictEqual(editUserRes.data.success, true);
+
+    const editedUserInDb = await db.getUserById(userZone01!.id!);
+    assert.strictEqual(editedUserInDb?.username, 'user_zone01_edited');
+    assert.strictEqual(editedUserInDb?.role, UserRole.ADMIN);
+    recordPass('PUT /api/users/:id successfully updates username and role');
+
+    // Restore username and role back to user_zone01 and REGULAR_USER
+    await axios.put(
+      `${baseUrl}/api/users/${userZone01!.id}`,
+      { username: 'user_zone01', role: UserRole.REGULAR_USER, zone_id: '01' },
+      { headers: { Authorization: `Bearer ${adminToken}` } }
+    );
+    recordPass('PUT /api/users/:id restored user_zone01 original username and role');
+
     // 4. Test Distinct Values Endpoint
     const distinctRes = await axios.get(`${baseUrl}/api/forms/distinct-values`, {
       headers: { Authorization: `Bearer ${regToken}` },

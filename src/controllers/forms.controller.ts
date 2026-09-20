@@ -1,9 +1,11 @@
 import { AcWebController, AcWebRoute, AcWebResponse, IAcWebRequestHandlerArgs } from 'ac-web';
 import { DbService } from '../database/db-service';
-import { FormStatus, UserRole, FormRow } from '../database/schema';
+import { FormStatus, UserRole, FormRow, MemberRow } from '../database/schema';
 import { calculateFormFees } from '../services/fee-calculator';
 import { requireAuth } from '../middlewares/auth.middleware';
 import { SamaajImporter } from '../services/samaaj-importer';
+import { generateMemberReceiptPdf } from '../services/pdf-receipt';
+import { WhatsAppService } from '../services/whatsapp-service';
 
 @AcWebController()
 @AcWebRoute({ path: '/api/forms' })
@@ -189,6 +191,23 @@ export class FormsController {
       });
     }
 
+    // Duplicate detection: block if form already exists for same zone + family + mobile (not REJECTED)
+    const db = DbService.getInstance();
+    const existingForms = await db.findDuplicateForm(
+      String(zone_number).trim(),
+      String(family_number).trim(),
+      effectiveFillerMobile
+    );
+    if (existingForms) {
+      return AcWebResponse.json({
+        data: {
+          success: false,
+          error: `A form already exists for Zone ${zone_number}, Family #${family_number} with this mobile number (Form #${existingForms.id}, Status: ${existingForms.status}). Please edit the existing form instead.`,
+        },
+        responseCode: 409,
+      });
+    }
+
     // Calculate 18+ members and total fees
     const feeCalculation = calculateFormFees(members);
 
@@ -225,12 +244,11 @@ export class FormsController {
       total_adults_count: feeCalculation.totalAdultsCount,
       total_amount: feeCalculation.totalAmount,
       payment_mode: 'Cash', // Strictly Cash only
-      status: FormStatus.PENDING,
+      status: FormStatus.SUBMITTED,
       created_by: user.userId,
       created_at: now,
     };
 
-    const db = DbService.getInstance();
     const result = await db.createForm(formRow, feeCalculation.evaluatedMembers as any);
 
     if (!result) {
@@ -249,6 +267,155 @@ export class FormsController {
         totalAmount: feeCalculation.totalAmount,
       },
       responseCode: 201,
+    });
+  }
+
+  @AcWebRoute({ path: '/:id/submit', method: 'post' })
+  async submitFormStatus(args: IAcWebRequestHandlerArgs | any): Promise<AcWebResponse> {
+    const request = args?.request || args;
+    const authResult = requireAuth(request);
+    if ('responseCode' in authResult) return authResult as AcWebResponse;
+    const { user } = authResult;
+
+    const id = parseInt(request.pathParameters?.id || '0', 10);
+    if (!id) {
+      return AcWebResponse.json({
+        data: { success: false, error: 'Invalid form id' },
+        responseCode: 400,
+      });
+    }
+
+    const db = DbService.getInstance();
+    const formDetails = await db.getFormById(id);
+    if (!formDetails) {
+      return AcWebResponse.json({
+        data: { success: false, error: 'Form not found' },
+        responseCode: 404,
+      });
+    }
+
+    if (formDetails.form.status !== FormStatus.PENDING) {
+      return AcWebResponse.json({
+        data: { success: false, error: `Only PENDING forms can be submitted. Current status: ${formDetails.form.status}` },
+        responseCode: 400,
+      });
+    }
+
+    await db.updateFormStatus({
+      id,
+      status: FormStatus.SUBMITTED,
+    });
+
+    return AcWebResponse.json({
+      data: { success: true, message: 'Form submitted for approval' },
+    });
+  }
+
+  @AcWebRoute({ path: '/:id/send-whatsapp', method: 'post' })
+  async sendWhatsApp(args: IAcWebRequestHandlerArgs | any): Promise<AcWebResponse> {
+    const request = args?.request || args;
+    const authResult = requireAuth(request);
+    if ('responseCode' in authResult) return authResult as AcWebResponse;
+    const { user } = authResult;
+
+    const id = parseInt(request.pathParameters?.id || '0', 10);
+    if (!id) {
+      return AcWebResponse.json({
+        data: { success: false, error: 'Invalid form id' },
+        responseCode: 400,
+      });
+    }
+
+    const db = DbService.getInstance();
+    const formDetails = await db.getFormById(id);
+    if (!formDetails) {
+      return AcWebResponse.json({
+        data: { success: false, error: 'Form not found' },
+        responseCode: 404,
+      });
+    }
+
+    const { form, members } = formDetails;
+    if (form.status !== FormStatus.APPROVED) {
+      return AcWebResponse.json({
+        data: { success: false, error: 'WhatsApp receipts can only be sent for approved forms' },
+        responseCode: 400,
+      });
+    }
+
+    const mainMember = members.find((m) => m.is_main_member === true || m.is_main_member === 1) || members[0];
+    const targetMobile = mainMember.mobile_number || form.filler_mobile;
+    const nowStr = new Date().toLocaleDateString('en-IN');
+    const waService = WhatsAppService.getInstance();
+    const dispatchResults: any[] = [];
+
+    for (const m of members) {
+      const memberPdf = await generateMemberReceiptPdf({
+        form,
+        member: m,
+        mainMember,
+        approvalDate: nowStr,
+        approverName: user.username,
+      });
+
+      const memberName = (m.name || [m.first_name, m.middle_name, form.surname].filter(Boolean).join(' ')).trim();
+      const waRes = await waService.sendMemberReceiptPdf(
+        targetMobile,
+        memberPdf,
+        form.receipt_number || '',
+        { name: memberName, memberId: m.fixed_member_number || '' },
+        {
+          mainMemberName: mainMember.name || form.filler_name,
+          zoneNumber: form.zone_number,
+          familyNumber: form.family_number,
+          amount: form.total_amount,
+        }
+      );
+      dispatchResults.push(waRes);
+    }
+
+    return AcWebResponse.json({
+      data: {
+        success: true,
+        message: `WhatsApp receipts sent to ${targetMobile}`,
+        dispatchResults,
+      },
+    });
+  }
+
+  @AcWebRoute({ path: '/lookup', method: 'get' })
+  async lookupForm(args: IAcWebRequestHandlerArgs | any): Promise<AcWebResponse> {
+    const request = args?.request || args;
+    const authResult = requireAuth(request);
+    if ('responseCode' in authResult) return authResult as AcWebResponse;
+
+    const query = request.get || {};
+    const zone = query.zone || query.zoneNumber || '';
+    const family = query.family || query.familyNumber || '';
+
+    if (!zone || !family) {
+      return AcWebResponse.json({
+        data: { success: false, error: 'Zone and family number are required' },
+        responseCode: 400,
+      });
+    }
+
+    const db = DbService.getInstance();
+    const result = await db.findFormByZoneFamily(String(zone).trim(), String(family).trim());
+
+    if (!result) {
+      return AcWebResponse.json({
+        data: { success: true, found: false },
+      });
+    }
+
+    return AcWebResponse.json({
+      data: {
+        success: true,
+        found: true,
+        form: result.form,
+        members: result.members,
+      },
     });
   }
 
@@ -705,6 +872,7 @@ export class FormsController {
       total_adults_count: feeCalculation.totalAdultsCount,
       total_amount: feeCalculation.totalAmount,
       payment_mode: 'Cash',
+      status: FormStatus.SUBMITTED,
     };
 
     const updateSuccess = await db.updateForm(id, formRow, feeCalculation.evaluatedMembers as any);

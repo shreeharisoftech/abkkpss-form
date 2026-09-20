@@ -76,45 +76,13 @@ export class ApprovalController {
     form.status = FormStatus.APPROVED;
     form.receipt_number = receiptNumber;
     form.approved_by = user.userId;
-    const targetMobile = mainMember.mobile_number || form.filler_mobile;
-    const nowStr = new Date().toLocaleDateString('en-IN');
-    const waService = WhatsAppService.getInstance();
-    const dispatchResults: any[] = [];
-
-    // 5. Generate and dispatch an individual receipt PDF for EACH member to the main member's WhatsApp
-    for (const m of members) {
-      const memberPdf = await generateMemberReceiptPdf({
-        form,
-        member: m,
-        mainMember,
-        approvalDate: nowStr,
-        approverName: user.username,
-      });
-
-      const memberName = (m.name || [m.first_name, m.middle_name, form.surname].filter(Boolean).join(' ')).trim();
-      const waRes = await waService.sendMemberReceiptPdf(
-        targetMobile,
-        memberPdf,
-        receiptNumber,
-        { name: memberName, memberId: m.fixed_member_number || '' },
-        {
-          mainMemberName: mainMember.name || form.filler_name,
-          zoneNumber: form.zone_number,
-          familyNumber: form.family_number,
-          amount: form.total_amount,
-        }
-      );
-      dispatchResults.push(waRes);
-    }
 
     return AcWebResponse.json({
       data: {
         success: true,
-        message: 'Form approved, individual member IDs allocated, and all receipts dispatched to main member',
+        message: 'Form approved and member IDs allocated',
         receiptNumber,
         membersCount: members.length,
-        whatsappDispatch: dispatchResults[0] || { success: true },
-        allDispatches: dispatchResults,
       },
     });
   }

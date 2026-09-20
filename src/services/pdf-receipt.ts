@@ -200,9 +200,9 @@ function renderReceiptPage(
   const hasGujarati = Boolean(
     (doc as any)._registeredFonts && ((doc as any)._registeredFonts['Gujarati-Bold'] || (doc as any)._registeredFonts['Gujarati'])
   );
-  const gujaratiFont = hasGujarati ? ((doc as any)._registeredFonts['Gujarati-Bold'] ? 'Gujarati-Bold' : 'Gujarati') : 'Helvetica-Bold';
-  doc.font(gujaratiFont).fontSize(20).fillColor(textColor);
-  doc.text('નિભાવ ફંડ', 580, 351, { width: 180, align: 'center' });
+  // const gujaratiFont = hasGujarati ? ((doc as any)._registeredFonts['Gujarati-Bold'] ? 'Gujarati-Bold' : 'Gujarati') : 'Helvetica-Bold';
+  // doc.font(gujaratiFont).fontSize(20).fillColor(textColor);
+  // doc.text('નિભાવ ફંડ', 580, 351, { width: 180, align: 'center' });
 
   // 7. Amount: After 'ના રૂા.', underline at y=376
   const isAdult = member.is_adult_18_plus === true || member.is_adult_18_plus === 1;
